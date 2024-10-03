@@ -48,6 +48,22 @@ def generate_body(name, data, indent=0):
             # Base case: a key-value pair, determine the C++ type
             cpp_type = get_cpp_type(value)
             struct_code += f"{indent_str}{INDENT_STR}{cpp_type} {key};\n"
+
+    # Generate loadDefaultValues() function
+    struct_code += f"\n{indent_str}    void loadDefaultValues() {{\n"
+    for key, value in data.items():
+        if isinstance(value, dict):
+            struct_code += f"{indent_str}        {key}.loadDefaultValues();\n"
+        elif isinstance(value, list) and all(isinstance(item, dict) for item in value):
+            # Initialize vector of structs
+            struct_code += f"{indent_str}        {key} = {{\n"
+            struct_code += ",\n".join([f"{indent_str}            {generate_table_initializer(key.capitalize(), item)}" for item in value])
+            struct_code += f"\n{indent_str}        }};\n"
+        else:
+            # Base case: primitive types or arrays
+            default_value = get_cpp_default_value(value)
+            struct_code += f"{indent_str}        {key} = {default_value};\n"
+    struct_code += f"{indent_str}    }}\n"
     
     struct_code += f"{indent_str}}};\n\n"
     return struct_code
@@ -77,6 +93,28 @@ def get_cpp_type(value):
         return "std::vector"
     else:
         raise ValueError(f"Unsupported type: {type(value)}")
+    
+def generate_table_initializer(struct_name, table):
+    """
+    Generates an initializer list for a C++ struct from a TOML table.
+    """
+    initializer = f"{struct_name}{{"
+    initializer += ", ".join([get_cpp_default_value(value) for value in table.values()])
+    initializer += "}"
+    return initializer
+    
+def get_cpp_default_value(value):
+    """
+    Returns the default value in C++ syntax for a given Python value.
+    """
+    if isinstance(value, str):
+        return f'"{value}"'
+    elif isinstance(value, bool):
+        return "true" if value else "false"
+    elif isinstance(value, list):
+        return "{" + ", ".join(map(str, value)) + "}"
+    else:
+        return str(value)
     
 def load_toml_file(toml_file):
     with open(toml_file, 'r') as file:
