@@ -1,0 +1,11 @@
+{
+	"name": "toml-cpp-generator",
+	"version-string": "0.1.0",
+	"port-version": 0,
+	"homepage": "https://github.com/mwthinker/TomlCppGenerator",
+	"description": "Examle of usage of the TomlCppGenerator",
+	"license": "MIT",
+	"dependencies": [
+		"toml11"
+	]
+}
