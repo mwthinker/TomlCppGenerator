@@ -6,18 +6,26 @@ project(TomlCppGenerator
 		CXX
 )
 
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT TomlCppGenerator)
+
 include(${CMAKE_CURRENT_SOURCE_DIR}/toml_generate_cpp.cmake)
-toml_generate_cpp(TOML_HDRS "${CMAKE_CURRENT_SOURCE_DIR}/tetris.toml" ${CMAKE_CURRENT_SOURCE_DIR})
 
-message(STATUS "Generated config header: ${TOML_HDRS}")
+toml_generate_cpp(GENERATED_HEADERS FILES "${CMAKE_CURRENT_SOURCE_DIR}/tetris.toml" OUT_DIR "src/")
 
-add_library(TomlCppGenerator
+message(STATUS "Generated config header: ${GENERATED_HEADERS}")
+
+add_executable(TomlCppGenerator
 	tetris.toml
-	${TOML_HDRS}
+	${GENERATED_HEADERS}
 	main.cpp
 )
 
 find_package(toml11 CONFIG REQUIRED)
+
+target_include_directories(TomlCppGenerator
+	PUBLIC
+		${CMAKE_CURRENT_BINARY_DIR}/src
+)
 
 target_link_libraries(TomlCppGenerator
 	PUBLIC
