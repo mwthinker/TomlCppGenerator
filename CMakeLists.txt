@@ -21,6 +21,7 @@ add_executable(TomlCppGenerator
 )
 
 find_package(toml11 CONFIG REQUIRED)
+find_package(fmt CONFIG REQUIRED)
 
 target_include_directories(TomlCppGenerator
 	PUBLIC
@@ -30,6 +31,7 @@ target_include_directories(TomlCppGenerator
 target_link_libraries(TomlCppGenerator
 	PUBLIC
 		toml11::toml11
+		fmt::fmt
 )
 
 set_target_properties(TomlCppGenerator

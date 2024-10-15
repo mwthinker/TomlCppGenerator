@@ -6,6 +6,7 @@
 	"description": "Examle of usage of the TomlCppGenerator",
 	"license": "MIT",
 	"dependencies": [
-		"toml11"
+		"toml11",
+		"fmt"
 	]
 }
