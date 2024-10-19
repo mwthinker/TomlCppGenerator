@@ -2,8 +2,20 @@
 import toml
 import argparse
 import os
+import textwrap
 
-INDENT_STR = '    '
+def cap_first(s):
+    return s[:1].upper() + s[1:]
+
+def uncap_first(s):
+    return s[:1].lower() + s[1:]
+
+def indent_text(text: str, indent_level: int, indent_char: str = '\t') -> str:
+    # Create the indentation string by repeating the indent_char
+    prefix = indent_char * indent_level
+    return textwrap.indent(text, prefix)
+
+INDENT_STR = '\t'
 
 def generate_header(toml_file, namespace="config") -> str:
     header = """
@@ -27,22 +39,91 @@ def generate_bottom() -> str:
 """
     return bottom
 
-def generate_body(name: str, data: dict[str, any], indent: int = 1) -> str:
+def generate_root_constructor(name: str, data: dict[str, any], depth: int = 1) -> str:
+    constructor = """
+class {name} {{
+public:
+    {name}(toml::value value)
+"""
+    constructor = constructor.format(name=name)
+    constructor += ": data_{value}"
+    constructor += generate_member_variables(get_member_variables(data), depth)
+    constructor += """
+        if (!data_.is_table()) {
+            data_ = toml::table{};
+        }
+    }
+"""
+    return constructor
+
+def get_member_variables(data: dict[str, any]) ->  dict[str, any]:
+    member_variables = dict()
+    for key, value in data.items():
+        if isinstance(value, dict):
+            member_variables[key] = get_member_variables(value)
+    return member_variables
+
+def generate_member_variables(member_variables: dict[str, any], depth: int) -> str:
+    member_variables_str = ""
+
+    first = True
+    for key, value in member_variables.items():
+        #cpp_type = get_cpp_type(value)
+        if isinstance(value, dict):
+            if first:
+                member_variables_str += f"\n{INDENT_STR*depth}, {key}_{{data_}}\n"
+                first = False
+            else:
+                member_variables_str += f"{INDENT_STR*depth}, {key}_{{data_}}\n"
+    return member_variables_str + "{\n"
+
+def generate_child_constructor(name: str, data: dict[str, any], depth: int = 1) -> str:
+    constructor = """
+class {name} {{
+public:
+    {name}(toml::value& value)
+"""
+    constructor = constructor.format(name=name)
+    constructor += f": data_{{value[\"{uncap_first(name)}\"]}}"
+    constructor += generate_member_variables(get_member_variables(data), depth)
+    constructor += """
+        if (!data_.is_table()) {
+            data_ = toml::table{};
+        }
+    }
+"""
+    return constructor
+
+def generate_constructor(name: str, data: dict[str, any], depth: int = 1) -> str:
+    if depth == 1:
+        return generate_root_constructor(name, data, depth)
+    else:
+        return generate_child_constructor(name, data, depth)
+
+def generate_body(parent: str, name: str, data: dict[str, any], depth: int = 1) -> str:
     """
     Recursively generates C++ struct code from the given TOML data.
     """
-    indent_str = INDENT_STR * indent
-    struct_code = f"\n{indent_str}struct {name} {{\n"
+    indent_str = INDENT_STR * depth
+    constructor = generate_constructor(name, data, depth)
+    struct_code = indent_text(constructor, depth)
     
     for key, value in data.items():
         if isinstance(value, dict):
             # Nested table, create a new struct
-            struct_code += generate_body(key.capitalize(), value, indent + 1)
-            struct_code += f"{indent_str}{INDENT_STR}{key.capitalize()} {key};\n"
+            struct_code += generate_body(name, key.capitalize(), value, depth + 1)
+
+            getter = """
+    {cpp_type}& get{cpp_type}() {{
+        return {key}_;
+    }}
+"""
+            getter = getter.format(cpp_type=cap_first(key), key=key, value=0)
+            struct_code += indent_text(getter, depth)
         elif isinstance(value, list):
             if all(isinstance(item, dict) for item in value):
                 # Array of tables (same structure)
-                struct_code += generate_body(key.capitalize(), value[0], indent + 1)
+                struct_code += generate_body(key.capitalize(), value[0], depth + 1)
                 struct_code += f"{indent_str}{INDENT_STR}std::vector<{key.capitalize()}> {key};\n"
             else:
                 # Array of primitive types
@@ -50,28 +131,35 @@ def generate_body(name: str, data: dict[str, any], indent: int = 1) -> str:
                 struct_code += f"{indent_str}{INDENT_STR}std::vector<{cpp_type}> {key};\n"
         else:
             # Base case: a key-value pair, determine the C++ type
-            cpp_type = get_cpp_type(value)
-            struct_code += f"{indent_str}{INDENT_STR}{cpp_type} {key};\n"
+            #cpp_type = get_cpp_type(value)
+            #struct_code += f"{indent_str}{INDENT_STR}{cpp_type} {key};\n"
+            print(f"key: {key}, value: {value}, type: {type(value)}")
+            getter_and_setter = get_cpp_getter_and_setter(key, value)
+            struct_code += indent_text(getter_and_setter, depth)
 
-    # Generate loadFromTOML() function
-    struct_code += f"\n{indent_str}    void loadFromTOML(const toml::value& toml_data) {{\n"
+    struct_code += """
+    const toml::value& getData() const {
+        return data_;
+    }
+"""
+    toml_variable = ""
+    if depth == 1:
+        toml_variable = """
+private:
+{indent_str}mutable toml::value data_;\n
+"""
+    else:
+        toml_variable = """
+private:
+{indent_str}toml::value& data_;\n
+"""
+    
+    toml_variable = toml_variable.format(indent_str=INDENT_STR)
+    struct_code += indent_text(toml_variable, depth)
     for key, value in data.items():
         if isinstance(value, dict):
-            struct_code += f"{indent_str}{indent_str}{key}.loadFromTOML(toml_data.at(\"{key}\"));\n"
-        elif isinstance(value, list) and all(isinstance(item, dict) for item in value):
-            # Initialize vector of structs
-            struct_code += f"{indent_str}        if (toml_data.contains(\"{key}\")) {{\n"
-            struct_code += f"{indent_str}            for (const auto& item : toml_data.at(\"{key}\").as_array()) {{\n"
-            struct_code += f"{indent_str}                {key}.emplace_back();\n"
-            struct_code += f"{indent_str}                {key}.back().loadFromTOML(item);\n"
-            struct_code += f"{indent_str}            }}\n"
-            struct_code += f"{indent_str}        }}\n"
-        else:
-            default_value = get_cpp_default_value(value)
-            struct_code += f"{indent_str}        if (toml_data.contains(\"{key}\")) {key} = toml_data.at(\"{key}\").as_{get_toml_type(value)}();\n"
-            struct_code += f"{indent_str}        else {key} = {default_value};\n"
-    struct_code += f"{indent_str}    }}\n"
-    
+            struct_code += f"{indent_str}{INDENT_STR}{key.capitalize()} {key}_;\n"
+
     struct_code += f"{indent_str}}};\n\n"
     return struct_code
 
@@ -80,7 +168,7 @@ def generate_cpp_code(name, toml_data) -> str:
     Generates C++ code from the given TOML data.
     """
     cpp_code = generate_header(name)
-    cpp_code += generate_body(name, toml_data, 1)
+    cpp_code += generate_body("", name, toml_data, 1)
     cpp_code += generate_bottom()
     return cpp_code
 
@@ -103,18 +191,34 @@ def get_cpp_type(value) -> str:
     """
     Returns the corresponding C++ type for a given Python value.
     """
-    if isinstance(value, int):
+    if isinstance(value, bool):
+        return "bool"
+    elif isinstance(value, int):
         return "int"
     elif isinstance(value, float):
         return "double"
     elif isinstance(value, str):
         return "std::string"
-    elif isinstance(value, bool):
-        return "bool"
     elif isinstance(value, list):
         return "std::vector"
     else:
         raise ValueError(f"Unsupported type: {type(value)}")
+    
+def get_cpp_getter_and_setter(key: str, value) -> str:
+    """
+    Returns the corresponding C++ getter using toml11 for a given Python value.
+    """
+    text = """
+    {cpp_type} get{member_name}() const {{
+        return toml::find_or(data_,"{key}", {value});
+    }}
+
+    void set{member_name}(const {cpp_type}& value) {{
+        data_["{key}"] = value;
+    }}
+    """
+    type = get_cpp_type(value)
+    return text.format(member_name=cap_first(key), cpp_type=type, key=key, value=get_cpp_default_value(value))
     
 def generate_table_initializer(struct_name, table) -> str:
     """
