@@ -10,12 +10,10 @@ def cap_first(s):
 def uncap_first(s):
     return s[:1].lower() + s[1:]
 
-def indent_text(text: str, indent_level: int, indent_char: str = '\t') -> str:
-    # Create the indentation string by repeating the indent_char
-    prefix = indent_char * indent_level
-    return textwrap.indent(text, prefix)
+INDENT_STR = '    '
 
-INDENT_STR = '\t'
+def indent_text(text: str, indent_level: int) -> str:
+    return textwrap.indent(text, INDENT_STR * indent_level)
 
 def generate_header(toml_file, namespace="config") -> str:
     header = """
@@ -39,15 +37,23 @@ def generate_bottom() -> str:
 """
     return bottom
 
-def generate_root_constructor(name: str, data: dict[str, any], depth: int = 1) -> str:
+def generate_constructor(name: str, data: dict[str, any], depth: int) -> str:
+    data_variable = ""
+    ref = ""
+    if depth == 1:
+        data_variable = "        : data_{value}"
+        ref = ""
+    else:
+        data_variable = f"        : data_{{value[\"{name}\"]}}"
+        ref = "&"
     constructor = """
 class {name} {{
 public:
-    {name}(toml::value value)
+    {name}(toml::value{ref} value)
 """
-    constructor = constructor.format(name=name)
-    constructor += ": data_{value}"
-    constructor += generate_member_variables(get_member_variables(data), depth)
+    constructor = constructor.format(name=name, ref=ref)
+    constructor += data_variable
+    constructor += generate_member_variables(get_member_variables(data), 2)
     constructor += """
         if (!data_.is_table()) {
             data_ = toml::table{};
@@ -66,44 +72,23 @@ def get_member_variables(data: dict[str, any]) ->  dict[str, any]:
 def generate_member_variables(member_variables: dict[str, any], depth: int) -> str:
     member_variables_str = ""
 
-    first = True
+    index = 0
+    size = len(member_variables)
     for key, value in member_variables.items():
-        #cpp_type = get_cpp_type(value)
         if isinstance(value, dict):
-            if first:
-                member_variables_str += f"\n{INDENT_STR*depth}, {key}_{{data_}}\n"
-                first = False
+            if index == 0 and size > 1:
+                member_variables_str += f"\n, {key}_{{data_}}\n"
+            elif index == size - 1:
+                member_variables_str += f"\n, {key}_{{data_}}"
             else:
-                member_variables_str += f"{INDENT_STR*depth}, {key}_{{data_}}\n"
-    return member_variables_str + "{\n"
+                member_variables_str += f", {key}_{{data_}}\n"
+        index += 1
+    
+    member_variables_str = indent_text(member_variables_str, depth)
 
-def generate_child_constructor(name: str, data: dict[str, any], depth: int = 1) -> str:
-    constructor = """
-class {name} {{
-public:
-    {name}(toml::value& value)
-"""
-    constructor = constructor.format(name=name)
-    constructor += f": data_{{value[\"{uncap_first(name)}\"]}}"
-    constructor += generate_member_variables(get_member_variables(data), depth)
-    constructor += """
-        if (!data_.is_table()) {
-            data_ = toml::table{};
-        }
-    }
-"""
-    return constructor
+    return member_variables_str + " {\n"
 
-def generate_constructor(name: str, data: dict[str, any], depth: int = 1) -> str:
-    if depth == 1:
-        return generate_root_constructor(name, data, depth)
-    else:
-        return generate_child_constructor(name, data, depth)
-
-def generate_body(parent: str, name: str, data: dict[str, any], depth: int = 1) -> str:
-    """
-    Recursively generates C++ struct code from the given TOML data.
-    """
+def generate_body(parent: str, name: str, data: dict[str, any], depth: int) -> str:
     indent_str = INDENT_STR * depth
     constructor = generate_constructor(name, data, depth)
     struct_code = indent_text(constructor, depth)
@@ -131,42 +116,38 @@ def generate_body(parent: str, name: str, data: dict[str, any], depth: int = 1) 
                 struct_code += f"{indent_str}{INDENT_STR}std::vector<{cpp_type}> {key};\n"
         else:
             # Base case: a key-value pair, determine the C++ type
-            #cpp_type = get_cpp_type(value)
-            #struct_code += f"{indent_str}{INDENT_STR}{cpp_type} {key};\n"
-            print(f"key: {key}, value: {value}, type: {type(value)}")
             getter_and_setter = get_cpp_getter_and_setter(key, value)
             struct_code += indent_text(getter_and_setter, depth)
 
-    struct_code += """
-    const toml::value& getData() const {
-        return data_;
-    }
+    data_getter = """
+const toml::value& getData() const {
+    return data_;
+}
 """
+    struct_code += indent_text(data_getter, depth + 1)
+
     toml_variable = ""
     if depth == 1:
         toml_variable = """
 private:
-{indent_str}mutable toml::value data_;\n
+    mutable toml::value data_;
 """
     else:
         toml_variable = """
 private:
-{indent_str}toml::value& data_;\n
+    toml::value& data_;
 """
-    
-    toml_variable = toml_variable.format(indent_str=INDENT_STR)
+
     struct_code += indent_text(toml_variable, depth)
+    member_variables = ""
     for key, value in data.items():
         if isinstance(value, dict):
-            struct_code += f"{indent_str}{INDENT_STR}{key.capitalize()} {key}_;\n"
-
-    struct_code += f"{indent_str}}};\n\n"
+            member_variables += f"        {key.capitalize()} {key}_;\n"
+    struct_code += indent_text(member_variables, depth - 1)
+    struct_code += indent_text("    };\n", depth - 1)
     return struct_code
 
 def generate_cpp_code(name, toml_data) -> str:
-    """
-    Generates C++ code from the given TOML data.
-    """
     cpp_code = generate_header(name)
     cpp_code += generate_body("", name, toml_data, 1)
     cpp_code += generate_bottom()
@@ -248,7 +229,6 @@ def load_toml_file(toml_file: str) -> dict[str, any]:
     return toml_data
 
 def run(args):
-    print(os.path.basename(args.toml_file) + " MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM")
     toml_data = load_toml_file(args.toml_file)
     cpp_code = generate_cpp_code("Config", toml_data)
     cpp_file = os.path.join(args.output_dir, os.path.basename(args.toml_file).split(".")[0] + "_config.h")
