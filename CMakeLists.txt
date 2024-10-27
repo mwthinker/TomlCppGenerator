@@ -18,6 +18,7 @@ add_executable(TomlCppGenerator
 	tetris.toml
 	${GENERATED_HEADERS}
 	main.cpp
+	src/util.h
 )
 
 find_package(toml11 CONFIG REQUIRED)
@@ -26,6 +27,7 @@ find_package(fmt CONFIG REQUIRED)
 target_include_directories(TomlCppGenerator
 	PUBLIC
 		${CMAKE_CURRENT_BINARY_DIR}/src
+		src
 )
 
 target_link_libraries(TomlCppGenerator

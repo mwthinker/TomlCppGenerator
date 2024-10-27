@@ -21,6 +21,8 @@ def generate_header(toml_file, namespace="config") -> str:
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include "util.h"
+
 #include <string>
 #include <vector>
 
@@ -62,26 +64,61 @@ public:
 """
     return constructor
 
+class MemberVariable:
+    name: str
+    value: any
+
+    def __init__(self, name: str, value: any):
+        self.name = name
+        self.value = value
+
+    def __str__(self):
+        return f"{self.name} {self.value}"
+
+    def __repr__(self):
+        return f"{self.name} {self.value}"
+
+    def get_cpp_type(self) -> str:
+        return get_cpp_type(self.value)
+
+    def get_cpp_getter_and_setter(self) -> str:
+        return get_cpp_getter_and_setter(self.name, self.value)
+
 def get_member_variables(data: dict[str, any]) ->  dict[str, any]:
     member_variables = dict()
     for key, value in data.items():
         if isinstance(value, dict):
             member_variables[key] = get_member_variables(value)
+        elif isinstance(value, list):
+            member_variables[key] = "MWMWMWMWMWMW"
+        #elif isinstance(value, list):
+            #member_variables[key] = f"{get_array_variable_name(key)}{{value}}"
+            
     return member_variables
+
+def get_member_variables_str(member_variables: dict[str, any]) -> list[str]:
+    member_variables_list = list()
+    for key, value in member_variables.items():
+        if isinstance(value, dict):
+            member_variables_list.append(f"{key}_{{data_}}")
+        elif isinstance(value, list):
+            member_variables_list.append(f"{get_array_variable_name(key)}{{value}}")
+
+    return member_variables_list
 
 def generate_member_variables(member_variables: dict[str, any], depth: int) -> str:
     member_variables_str = ""
 
+    member_variables_list = get_member_variables_str(member_variables)
     index = 0
     size = len(member_variables)
-    for key, value in member_variables.items():
-        if isinstance(value, dict):
-            if index == 0 and size > 1:
-                member_variables_str += f"\n, {key}_{{data_}}\n"
-            elif index == size - 1:
-                member_variables_str += f"\n, {key}_{{data_}}"
-            else:
-                member_variables_str += f", {key}_{{data_}}\n"
+    for variable_name in member_variables_list:
+        if index == 0 and size > 1:
+            member_variables_str += f"\n, {variable_name}\n"
+        elif index == size - 1:
+            member_variables_str += f"\n, {variable_name}"
+        else:
+            member_variables_str += f", {variable_name}\n"
         index += 1
     
     member_variables_str = indent_text(member_variables_str, depth)
@@ -93,10 +130,12 @@ def generate_body(parent: str, name: str, data: dict[str, any], depth: int) -> s
     constructor = generate_constructor(name, data, depth)
     struct_code = indent_text(constructor, depth)
     
+    extra_arrays = ""
+
     for key, value in data.items():
         if isinstance(value, dict):
             # Nested table, create a new struct
-            struct_code += generate_body(name, key.capitalize(), value, depth + 1)
+            struct_code += generate_body(name, cap_first(key), value, depth + 1)
 
             getter = """
     {cpp_type}& get{cpp_type}() {{
@@ -108,12 +147,23 @@ def generate_body(parent: str, name: str, data: dict[str, any], depth: int) -> s
         elif isinstance(value, list):
             if all(isinstance(item, dict) for item in value):
                 # Array of tables (same structure)
-                struct_code += generate_body(key.capitalize(), value[0], depth + 1)
-                struct_code += f"{indent_str}{INDENT_STR}std::vector<{key.capitalize()}> {key};\n"
+                struct_code += generate_body(name, cap_first(key), value[0], depth + 1)
+
+                array_str = """
+Vector<{type}>& get{name}() {{
+    return {variable};
+}}
+"""
+                array_name = get_array_name(key)
+                variable_name = get_array_variable_name(array_name)
+                array_str = array_str.format(type=cap_first(key), name=array_name, variable=variable_name)
+                struct_code += indent_text(array_str, depth + 1)
+
+                extra_arrays += f"{indent_str}{INDENT_STR}Vector<{cap_first(key)}> {variable_name};\n"
             else:
                 # Array of primitive types
                 cpp_type = get_cpp_type(value[0])
-                struct_code += f"{indent_str}{INDENT_STR}std::vector<{cpp_type}> {key};\n"
+                extra_arrays += f"{indent_str}{INDENT_STR}std::vector<{cpp_type}> {key};\n"
         else:
             # Base case: a key-value pair, determine the C++ type
             getter_and_setter = get_cpp_getter_and_setter(key, value)
@@ -142,10 +192,21 @@ private:
     member_variables = ""
     for key, value in data.items():
         if isinstance(value, dict):
-            member_variables += f"        {key.capitalize()} {key}_;\n"
+            member_variables += f"        {cap_first(key)} {key}_;\n"
     struct_code += indent_text(member_variables, depth - 1)
+    struct_code += indent_text(extra_arrays, depth - 1)
     struct_code += indent_text("    };\n", depth - 1)
     return struct_code
+
+def get_array_name(key: str) -> str:
+    if key.endswith("s"):
+        key += "List"
+    else:
+        key += "s"
+    return cap_first(key)
+
+def get_array_variable_name(key: str) -> str:
+    return uncap_first(get_array_name(key)) + "_"
 
 def generate_cpp_code(name, toml_data) -> str:
     cpp_code = generate_header(name)
