@@ -4,6 +4,37 @@ import argparse
 import os
 import textwrap
 
+class MemberVariable:
+    name: str
+    type: str
+    initialization: str
+
+    def __init__(self, name: str, value: any):
+        if isinstance(value, dict):
+            self.name = name + "_"
+            self.value = value
+            self.type = cap_first(name)
+            self.initialization = self.name + "{data_}"
+        elif isinstance(value, list):
+            self.name = get_array_variable_name(name)
+            self.value = value
+            self.type = "Vector<" + cap_first(name) + ">"
+            self.initialization = f"{self.name} {{Vector<{cap_first(name)}>::create(data_[\"{name}\"])}}"
+        else:
+            self.name = name
+            self.value = value
+            self.type = get_cpp_type(value)
+            self.initialization = self.name + "{data_}"
+
+    def get_declaration(self):
+        return f"{self.type} {self.name};"
+
+    #def __str__(self):
+    #    return f"{self.name} {self.value}"
+
+    #def __repr__(self):
+    #    return f"{self.name} {self.value}"
+
 def cap_first(s):
     return s[:1].upper() + s[1:]
 
@@ -46,7 +77,7 @@ def generate_constructor(name: str, data: dict[str, any], depth: int) -> str:
         data_variable = "        : data_{value}"
         ref = ""
     else:
-        data_variable = f"        : data_{{value[\"{name}\"]}}"
+        data_variable = f"        : data_{{value[\"{uncap_first(name)}\"]}}"
         ref = "&"
     constructor = """
 class {name} {{
@@ -64,45 +95,23 @@ public:
 """
     return constructor
 
-class MemberVariable:
-    name: str
-    value: any
-
-    def __init__(self, name: str, value: any):
-        self.name = name
-        self.value = value
-
-    def __str__(self):
-        return f"{self.name} {self.value}"
-
-    def __repr__(self):
-        return f"{self.name} {self.value}"
-
-    def get_cpp_type(self) -> str:
-        return get_cpp_type(self.value)
-
-    def get_cpp_getter_and_setter(self) -> str:
-        return get_cpp_getter_and_setter(self.name, self.value)
-
-def get_member_variables(data: dict[str, any]) ->  dict[str, any]:
-    member_variables = dict()
+def get_member_variables(data: dict[str, any]) ->  list[MemberVariable]:
+    member_variables = list()
     for key, value in data.items():
-        if isinstance(value, dict):
-            member_variables[key] = get_member_variables(value)
-        elif isinstance(value, list):
-            member_variables[key] = "MWMWMWMWMWMW"
-        #elif isinstance(value, list):
-            #member_variables[key] = f"{get_array_variable_name(key)}{{value}}"
+        if isinstance(value, dict) or isinstance(value, list):
+            member_variables.append(MemberVariable(key, value))
             
     return member_variables
 
-def get_member_variables_str(member_variables: dict[str, any]) -> list[str]:
+def get_member_variables_str(member_variables: list[MemberVariable]) -> list[str]:
     member_variables_list = list()
-    for key, value in member_variables.items():
-        if isinstance(value, dict):
-            member_variables_list.append(f"{key}_{{data_}}")
-        elif isinstance(value, list):
-            member_variables_list.append(f"{get_array_variable_name(key)}{{value}}")
+    for member_variable in member_variables:
+        #if isinstance(member_variable, dict):
+        if isinstance(member_variable.value, dict) or isinstance(member_variable.value, list):
+            #member_variables_list.append(f"{member_variable.name}{{data_}}")
+            member_variables_list.append(member_variable.initialization)
+        #elif isinstance(value, list):
+            #member_variables_list.append(f"{get_array_variable_name(key)}{{value}}")
 
     return member_variables_list
 
@@ -155,11 +164,9 @@ Vector<{type}>& get{name}() {{
 }}
 """
                 array_name = get_array_name(key)
-                variable_name = get_array_variable_name(array_name)
+                variable_name = get_array_variable_name(key)
                 array_str = array_str.format(type=cap_first(key), name=array_name, variable=variable_name)
                 struct_code += indent_text(array_str, depth + 1)
-
-                extra_arrays += f"{indent_str}{INDENT_STR}Vector<{cap_first(key)}> {variable_name};\n"
             else:
                 # Array of primitive types
                 cpp_type = get_cpp_type(value[0])
@@ -189,11 +196,11 @@ private:
 """
 
     struct_code += indent_text(toml_variable, depth)
-    member_variables = ""
-    for key, value in data.items():
-        if isinstance(value, dict):
-            member_variables += f"        {cap_first(key)} {key}_;\n"
-    struct_code += indent_text(member_variables, depth - 1)
+    member_variables = get_member_variables(data)
+    for member_variable in member_variables:
+        struct_code += indent_text(f"    {member_variable.type} {member_variable.name};\n", depth)
+
+    #struct_code += indent_text(member_variables, depth - 1)
     struct_code += indent_text(extra_arrays, depth - 1)
     struct_code += indent_text("    };\n", depth - 1)
     return struct_code
@@ -252,7 +259,7 @@ def get_cpp_getter_and_setter(key: str, value) -> str:
     """
     text = """
     {cpp_type} get{member_name}() const {{
-        return toml::find_or(data_,"{key}", {value});
+        return toml::find_or(data_, "{key}", {value});
     }}
 
     void set{member_name}(const {cpp_type}& value) {{

@@ -71,12 +71,6 @@ namespace config {
 
 		Vector(toml::array& value)
 			: data_{std::ref(value)} {
-
-            /*
-			if (!data_.get().is_array()) {
-				data_ = toml::array{};
-			}
-            */
 		}
 
         static Type wrap(toml::value& value) {

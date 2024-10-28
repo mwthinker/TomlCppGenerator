@@ -10,11 +10,15 @@ void useValue(toml::value value) {
 
 //  , productsList_{Vector<Config::Product>::create(data_["product"])}
 
-int main() {	
-	config::Config config{toml::parse(R"(C:\Github\TomlCppGenerator\tetris.toml)")};
+int main() {
+	toml::value root = toml::parse(R"(C:\Github\TomlCppGenerator\tetris.toml)");
+	config::Config config{root};
+
+	root["window"]["width"] = 1000;
 
 	//config::Config config{toml::table{}};
 
+	auto& w = config.getWindow();
 	int width = config.getWindow().getWidth() + 999;
 	try {
 		config.getWindow().setWidth(width);
@@ -33,6 +37,7 @@ int main() {
 	config::Config::Product product{v};
 	//config::Vector<config::Config::Product>::wrap(v);
 
+
 	//valuee.getOr("width", 10);
     //config::Config config{toml::parse("config.toml")};
     //config.loadFromTOML(toml::parse("config.toml"));
@@ -47,7 +52,8 @@ int main() {
     toml::value old = toml::parse_str(value);
 	toml::value val = toml::find_or(old, "window", toml::table{});
 
-	
+	val["widthasddsa"] = 1;
+	val["widthasddsa"] = "assad";
 
 	val.contains("width");
 	if (val.is_table()) {
