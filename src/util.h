@@ -4,83 +4,89 @@
 #include <toml.hpp>
 
 #include <vector>
+#include <concepts>
 
 namespace config {
 
-    template <typename Iterator, typename Func>
+    template <typename T>
+    concept InputIterator = std::input_iterator<T>;
+
+    template <typename Func, typename Iterator>
+    concept TransformFunc = std::input_iterator<Iterator> && requires(Func f, Iterator it) {
+        { f(*it) } -> std::convertible_to<std::invoke_result_t<Func, typename std::iterator_traits<Iterator>::reference>>;
+    };
+
+    template <InputIterator Iterator, TransformFunc<Iterator> Func>
     class TransformIterator {
     public:
-        using iterator_category = std::forward_iterator_tag;
-        using value_type = decltype(std::declval<Func>()(*std::declval<Iterator>()));
-        using difference_type = std::ptrdiff_t;
+        using iterator_category = std::iterator_traits<Iterator>::iterator_category;
+        using value_type = std::invoke_result_t<Func, typename std::iterator_traits<Iterator>::reference>;
+        using difference_type = std::iterator_traits<Iterator>::difference_type;
         using pointer = value_type*;
-        using reference = value_type&;
-
-    private:
-        Iterator current;
-        Func func;
+        using reference = value_type;
 
     public:
-        // Constructor
-        TransformIterator(Iterator iter, Func f) : current(iter), func(f) {}
+        TransformIterator(Iterator iter, Func f)
+            : current{iter}
+            , func{f} {
+        }
 
-        // Dereference operator applies the transformation function
-        value_type operator*() const {
+        reference operator*() const {
             return func(*current);
         }
 
-        // Pre-increment
         TransformIterator& operator++() {
             ++current;
             return *this;
         }
 
-        // Post-increment
         TransformIterator operator++(int) {
             TransformIterator temp = *this;
             ++(*this);
             return temp;
         }
 
-        // Equality comparison
         bool operator==(const TransformIterator& other) const {
             return current == other.current;
         }
 
-        // Inequality comparison
         bool operator!=(const TransformIterator& other) const {
             return !(*this == other);
         }
+
+    private:
+        Iterator current;
+        Func func;
     };
 
-	template <typename Type>
-	class Vector {
-	public:
-		Vector() = default;
+    template<typename T>
+    concept Table = std::is_constructible_v<T, toml::value&>;
 
-		static Vector create(toml::value& value) {
+    template <typename Type>
+    class Vector {
+    public:
+        static Vector create(toml::value& value) {
             if (!value.is_array()) {
-				// TODO! Maybe throw an exception here or warn?
+                // TODO! Maybe throw an exception here or warn?
                 value = toml::array{};
-			}
+            }
 
-            int size = value.as_array().size();
-
-			return Vector{value.as_array()};
-		}
-
-		Vector(toml::array& value)
-			: data_{std::ref(value)} {
-		}
-
-        static Type wrap(toml::value& value) {
-            return Type{value};  // Assuming W can be constructed from T
+            return Vector{value.as_array()};
         }
 
-        Type add() {
-			auto& t = data_.get().emplace_back();
+        explicit Vector(toml::array& value)
+            : data_{std::ref(value)} {
+        }
+
+        Vector(Vector&) = delete;
+        Vector& operator=(Vector&) = delete;
+
+		/// @brief Add a new element to the vector (only available if the element is a Table toml type)
+		/// @return the new element
+        Type add() requires Table<Type> {
+            auto& t = data_.get().emplace_back();
             return Type{t};
-		}
+        }
 
         auto begin() {
             return TransformIterator{data_.get().begin(), wrap};
@@ -91,7 +97,7 @@ namespace config {
         }
 
         auto end() {
-			return TransformIterator{data_.get().end(), wrap};
+            return TransformIterator{data_.get().end(), wrap};
         }
 
         auto end() const {
@@ -105,9 +111,33 @@ namespace config {
         auto cend() const {
             return data_.get().cend();
         }
+
+        auto pop_back() {
+            data_.get().pop_back();
+        }
+
+        auto size() const {
+            return data_.get().size();
+        }
+
     private:
+        static Type wrap(toml::value& value) {
+            if constexpr (std::is_same_v<Type, toml::type_config::integer_type>) {
+                return value.as_integer();
+            } else if constexpr (std::is_same_v<Type, toml::type_config::string_type>) {
+                return value.as_string();
+            } else if constexpr (std::is_same_v<Type, toml::type_config::boolean_type>) {
+                return value.as_boolean();
+            } else if constexpr (std::is_same_v<Type, toml::type_config::floating_type>) {
+                return value.as_floating();
+            } else {
+                static_assert(std::is_constructible_v<Type, toml::value&>, "Type must be constructible from toml::value&");
+                return Type{value};
+            }
+        }
+
         std::reference_wrapper<toml::array> data_;
-	};
+    };
 
 }
 

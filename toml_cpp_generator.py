@@ -4,27 +4,45 @@ import argparse
 import os
 import textwrap
 
+def get_cpp_array_element_type(name: str, value: list) -> str:
+    types = set()
+    for item in value:
+        if isinstance(item, dict):
+            types.add(cap_first(name))
+        elif isinstance(item, list):
+            types.add(get_cpp_array_element_type(name, item))
+        else:
+            types.add(get_cpp_type(item))
+
+    if len(types) > 1:
+        raise ValueError(f"Array contains multiple types: {types}")
+
+    return types.pop()
+
 class MemberVariable:
     name: str
     type: str
+    value: any
     initialization: str
 
     def __init__(self, name: str, value: any):
+        self.value = value
         if isinstance(value, dict):
             self.name = name + "_"
-            self.value = value
             self.type = cap_first(name)
             self.initialization = self.name + "{data_}"
         elif isinstance(value, list):
             self.name = get_array_variable_name(name)
-            self.value = value
-            self.type = "Vector<" + cap_first(name) + ">"
-            self.initialization = f"{self.name} {{Vector<{cap_first(name)}>::create(data_[\"{name}\"])}}"
+            element_type = get_cpp_array_element_type(name, value)
+            self.type = "Vector<" + element_type + ">"
+            self.initialization = f"{self.name}{{Vector<{element_type}>::create(data_[\"{name}\"])}}"
         else:
             self.name = name
-            self.value = value
             self.type = get_cpp_type(value)
             self.initialization = self.name + "{data_}"
+
+    def get_getter_name(self):
+        return cap_first(self.name[:-1])
 
     def get_declaration(self):
         return f"{self.type} {self.name};"
@@ -82,7 +100,7 @@ def generate_constructor(name: str, data: dict[str, any], depth: int) -> str:
     constructor = """
 class {name} {{
 public:
-    {name}(toml::value{ref} value)
+    explicit {name}(toml::value{ref} value)
 """
     constructor = constructor.format(name=name, ref=ref)
     constructor += data_variable
@@ -106,9 +124,7 @@ def get_member_variables(data: dict[str, any]) ->  list[MemberVariable]:
 def get_member_variables_str(member_variables: list[MemberVariable]) -> list[str]:
     member_variables_list = list()
     for member_variable in member_variables:
-        #if isinstance(member_variable, dict):
         if isinstance(member_variable.value, dict) or isinstance(member_variable.value, list):
-            #member_variables_list.append(f"{member_variable.name}{{data_}}")
             member_variables_list.append(member_variable.initialization)
         #elif isinstance(value, list):
             #member_variables_list.append(f"{get_array_variable_name(key)}{{value}}")
@@ -138,8 +154,6 @@ def generate_body(parent: str, name: str, data: dict[str, any], depth: int) -> s
     indent_str = INDENT_STR * depth
     constructor = generate_constructor(name, data, depth)
     struct_code = indent_text(constructor, depth)
-    
-    extra_arrays = ""
 
     for key, value in data.items():
         if isinstance(value, dict):
@@ -154,23 +168,22 @@ def generate_body(parent: str, name: str, data: dict[str, any], depth: int) -> s
             getter = getter.format(cpp_type=cap_first(key), key=key, value=0)
             struct_code += indent_text(getter, depth)
         elif isinstance(value, list):
+            memberVariable = MemberVariable(key, value)
+            array_str = """
+{type}& get{name}() {{
+    return {variable};
+}}
+"""
+            array_str = array_str.format(type=memberVariable.type, name=memberVariable.get_getter_name(), variable=memberVariable.name)
+
             if all(isinstance(item, dict) for item in value):
                 # Array of tables (same structure)
                 struct_code += generate_body(name, cap_first(key), value[0], depth + 1)
 
-                array_str = """
-Vector<{type}>& get{name}() {{
-    return {variable};
-}}
-"""
-                array_name = get_array_name(key)
-                variable_name = get_array_variable_name(key)
-                array_str = array_str.format(type=cap_first(key), name=array_name, variable=variable_name)
-                struct_code += indent_text(array_str, depth + 1)
-            else:
+            
                 # Array of primitive types
-                cpp_type = get_cpp_type(value[0])
-                extra_arrays += f"{indent_str}{INDENT_STR}std::vector<{cpp_type}> {key};\n"
+                #extra_arrays += f"{indent_str}{INDENT_STR}{memberVariable.type}{memberVariable.name};\n"
+            struct_code += indent_text(array_str, depth + 1)
         else:
             # Base case: a key-value pair, determine the C++ type
             getter_and_setter = get_cpp_getter_and_setter(key, value)
@@ -201,7 +214,6 @@ private:
         struct_code += indent_text(f"    {member_variable.type} {member_variable.name};\n", depth)
 
     #struct_code += indent_text(member_variables, depth - 1)
-    struct_code += indent_text(extra_arrays, depth - 1)
     struct_code += indent_text("    };\n", depth - 1)
     return struct_code
 
@@ -235,6 +247,9 @@ def get_toml_type(value) -> str:
         return "boolean"
     else:
         return "value"  # fallback for unsupported types
+    
+def is_cpp_type(value) -> bool:
+    return isinstance(value, (int, float, str, bool, list))
 
 def get_cpp_type(value) -> str:
     """
