@@ -1,0 +1,32 @@
+fullscreenOnDoubleClick = false
+multiSampleSamples = 0
+integers = [ 1, 2, 3 ]
+
+[window]
+width = 800
+font = "fonts/Ubuntu-B.ttf"
+
+[window.label]
+height = 35
+
+[bar]
+name = "test"
+[[product]]
+color = "#8000004d"
+
+[bar.foo]
+height = 35
+cat = "meow"
+dog = "woof"
+
+#[window.bar]
+#height = 35
+#color = "#8000004d"
+
+#[[ai]]
+#name = "Default2"
+#valueFunction = "-0.2*cumulativeWells - 1*holeDepth - 1*holes - 1*landingHeight"
+
+#[[ai]]
+#name = "Defensive"
+#valueFunction = "-0.2*cumulativeWells - 0.8*holeDepth - 1.1*holes - 0.4*landingHeight"

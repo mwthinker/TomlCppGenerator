@@ -70,7 +70,7 @@ def generate_header(toml_file, namespace="config") -> str:
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include "util.h"
+#include <tomlgen/util.h>
 
 #include <string>
 #include <vector>

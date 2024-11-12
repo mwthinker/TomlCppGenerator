@@ -1,44 +1,25 @@
 cmake_minimum_required(VERSION 3.24)
 project(TomlCppGenerator
 	DESCRIPTION
-		"A lib for tetris board rules and ai logic"
+		"Helper functions for generated C++ code from TOML files"
 	LANGUAGES
 		CXX
 )
 
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT TomlCppGenerator)
-
-include(${CMAKE_CURRENT_SOURCE_DIR}/toml_generate_cpp.cmake)
-
-toml_generate_cpp(GENERATED_HEADERS FILES "${CMAKE_CURRENT_SOURCE_DIR}/tetris.toml" OUT_DIR "src/")
-
-message(STATUS "Generated config header: ${GENERATED_HEADERS}")
-
-add_executable(TomlCppGenerator
-	tetris.toml
-	${GENERATED_HEADERS}
-	main.cpp
-	src/util.h
-)
-
 find_package(toml11 CONFIG REQUIRED)
-find_package(fmt CONFIG REQUIRED)
+
+add_library(TomlCppGenerator INTERFACE)
 
 target_include_directories(TomlCppGenerator
-	PUBLIC
-		${CMAKE_CURRENT_BINARY_DIR}/src
-		src
+	INTERFACE
+		include/
 )
 
-target_link_libraries(TomlCppGenerator
-	PUBLIC
-		toml11::toml11
-		fmt::fmt
-)
+target_compile_features(TomlCppGenerator INTERFACE cxx_std_23)
 
-set_target_properties(TomlCppGenerator
-	PROPERTIES
-		CXX_STANDARD 23
-		CXX_STANDARD_REQUIRED YES
-		CXX_EXTENSIONS NO
-)
+message(STATUS "TomlCppGenerator_Example is available to add: -DTomlCppGenerator_Example=1")
+option(TomlCppGenerator_Example "Add TomlCppGenerator_Example project." OFF)
+if (TomlCppGenerator_Example)
+	include(toml_generate_cpp.cmake)
+	add_subdirectory(TomlCppGenerator_Example)
+endif ()

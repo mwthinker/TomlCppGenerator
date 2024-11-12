@@ -19,8 +19,6 @@ function(toml_generate_cpp TOML_HDRS_VAR)
         set(TOML_GEN_CPP_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/${TOML_GEN_CPP_OUT_DIR}")
     endif()
 
-    message(STATUS "TOML_GEN_CPP_OUT_DIR " "${TOML_GEN_CPP_OUT_DIR}")
-
     set(generated_headers)
 
     foreach(TOML_FILE IN LISTS TOML_GEN_CPP_FILES)
@@ -29,12 +27,12 @@ function(toml_generate_cpp TOML_HDRS_VAR)
 
         # Define the output header file in the resolved OUT_DIR
         set(TOML_HDR "${TOML_GEN_CPP_OUT_DIR}/${BASE_NAME}_config.h")
-        message(STATUS "MMMMMMMMM " "COMMAND Python3::Interpreter " "${CMAKE_CURRENT_SOURCE_DIR}/toml_cpp_generator.py " "${TOML_FILE} " "${TOML_GEN_CPP_OUT_DIR} ")
+        message(STATUS "MMMMMMMMM " "COMMAND Python3::Interpreter " "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/toml_cpp_generator.py " "${TOML_FILE} " "${TOML_GEN_CPP_OUT_DIR} ")
 
         # Call the Python script with the input TOML file and output header file
         add_custom_command(
             OUTPUT "${TOML_HDR}"
-            COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/toml_cpp_generator.py" "${TOML_FILE}" "${TOML_GEN_CPP_OUT_DIR}"
+            COMMAND Python3::Interpreter "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/toml_cpp_generator.py" "${TOML_FILE}" "${TOML_GEN_CPP_OUT_DIR}"
             DEPENDS "${TOML_FILE}"
             COMMENT "Generating config header from ${TOML_FILE} in ${TOML_GEN_CPP_OUT_DIR}"
             VERBATIM
