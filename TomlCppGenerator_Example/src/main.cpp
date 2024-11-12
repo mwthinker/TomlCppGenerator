@@ -9,7 +9,7 @@ void useValue(toml::value value) {
 }
 
 template <typename T>
-requires config::Table<T>
+requires cppgen::Table<T>
 void testing() {
 
 }

@@ -6,7 +6,7 @@
 #include <vector>
 #include <concepts>
 
-namespace config {
+namespace cppgen {
 
     template<typename T>
     concept Table = std::is_constructible_v<T, toml::value&>;

@@ -34,8 +34,8 @@ class MemberVariable:
         elif isinstance(value, list):
             self.name = get_array_variable_name(name)
             element_type = get_cpp_array_element_type(name, value)
-            self.type = "Vector<" + element_type + ">"
-            self.initialization = f"{self.name}{{Vector<{element_type}>::create(data_[\"{name}\"])}}"
+            self.type = "cppgen::Vector<" + element_type + ">"
+            self.initialization = f"{self.name}{{cppgen::Vector<{element_type}>::create(data_[\"{name}\"])}}"
         else:
             self.name = name
             self.type = get_cpp_type(value)
@@ -246,7 +246,7 @@ def get_toml_type(value) -> str:
     elif isinstance(value, bool):
         return "boolean"
     else:
-        return "value"  # fallback for unsupported types
+        raise ValueError(f"Unsupported type: {type(value)}")
     
 def is_cpp_type(value) -> bool:
     return isinstance(value, (int, float, str, bool, list))
